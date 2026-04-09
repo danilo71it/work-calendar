@@ -170,7 +170,7 @@ export default function App() {
               {format(currentDate, 'MMMM', { locale: it }).charAt(0).toUpperCase() + format(currentDate, 'MMMM', { locale: it }).slice(1)}
               <span className="font-sans font-bold not-italic ml-3 text-orange-500 text-3xl align-middle">{format(currentDate, 'yyyy')}</span>
             </h1>
-            <p className="text-sm text-gray-500 uppercase tracking-widest font-medium">Gestione Turni Alternati</p>
+            <p className="text-sm text-gray-500 uppercase tracking-widest font-medium">Gestione Turni Lavoro</p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100">
@@ -214,7 +214,16 @@ export default function App() {
         </header>
 
         {/* Calendar Grid */}
-        <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden">
+        <motion.div 
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.2}
+          onDragEnd={(_, info) => {
+            if (info.offset.x > 100) handlePrevMonth();
+            else if (info.offset.x < -100) handleNextMonth();
+          }}
+          className="bg-white rounded-[2rem] shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden touch-none"
+        >
           {/* Weekdays */}
           <div className="grid grid-cols-7 border-bottom border-gray-100 bg-gray-50/50">
             {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map((day) => (
@@ -254,7 +263,7 @@ export default function App() {
                   whileHover={{ scale: 0.98 }}
                   onClick={() => handleDayClick(day)}
                   className={`
-                    relative min-h-[100px] md:min-h-[120px] p-2 border-r border-b border-gray-50 cursor-pointer transition-colors
+                    relative min-h-[85px] md:min-h-[100px] p-2 border-r border-b border-gray-50 cursor-pointer transition-colors
                     ${bgColor}
                     ${idx % 7 === 6 ? 'border-r-0' : ''}
                     hover:bg-orange-50/30
@@ -283,7 +292,7 @@ export default function App() {
                       mt-2 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tighter
                       ${shift === 'Mattina' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}
                     `}>
-                      {shift}
+                      {shift === 'Mattina' ? 'AM' : 'PM'}
                     </div>
                   )}
 
@@ -300,7 +309,7 @@ export default function App() {
 
                   {event?.forcedShift && !event.type && (
                     <div className="mt-2 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tighter bg-purple-100 text-purple-700">
-                      {event.forcedShift} (Modificato)
+                      {event.forcedShift === 'Mattina' ? 'AM' : 'PM'} (Mod.)
                     </div>
                   )}
 
@@ -313,7 +322,7 @@ export default function App() {
               );
             })}
           </div>
-        </div>
+        </motion.div>
 
         {/* Legend */}
         <footer className="mt-8 flex flex-wrap gap-6 justify-center text-xs font-medium text-gray-500 uppercase tracking-wider">
