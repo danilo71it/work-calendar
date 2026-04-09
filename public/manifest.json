@@ -1,0 +1,21 @@
+{
+  "name": "Turni Facili",
+  "short_name": "Turni",
+  "description": "Calendario turni alternati con gestione ferie e malattie",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F8F9FA",
+  "theme_color": "#F97316",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/calendar/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/calendar/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
