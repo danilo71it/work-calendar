@@ -32,14 +32,17 @@ import {
   Moon,
   Plane,
   Stethoscope,
-  Plus
+  Plus,
+  Building2,
+  Pencil,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Reference: 2026-04-06 is Monday of a Morning week
 const REFERENCE_DATE = new Date(2026, 3, 6); // April 6, 2026
 
-type EventType = 'ferie' | 'malattia' | 'sabato' | null;
+type EventType = 'ferie' | 'malattia' | 'sabato' | 'chiusura' | null;
 
 interface DayEvent {
   type: EventType;
@@ -52,6 +55,9 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [events, setEvents] = useState<Record<string, DayEvent>>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [viewingNote, setViewingNote] = useState<string | null>(null);
 
   // Load events from localStorage
   useEffect(() => {
@@ -101,7 +107,27 @@ export default function App() {
 
   const handleDayClick = (day: Date) => {
     setSelectedDate(day);
+    const dateKey = format(day, 'yyyy-MM-dd');
+    setNoteText(events[dateKey]?.note || '');
     setIsModalOpen(true);
+  };
+
+  const saveNote = () => {
+    if (!selectedDate) return;
+    const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    const currentEvent = events[dateKey] || { type: null };
+    
+    if (!noteText.trim() && !currentEvent.type && !currentEvent.forcedShift) {
+      const newEvents = { ...events };
+      delete newEvents[dateKey];
+      setEvents(newEvents);
+    } else {
+      setEvents({
+        ...events,
+        [dateKey]: { ...currentEvent, note: noteText.trim() || undefined }
+      });
+    }
+    setIsModalOpen(false);
   };
 
   const setDayEvent = (type: EventType) => {
@@ -254,8 +280,14 @@ export default function App() {
                 if (event?.type === 'ferie') bgColor = 'bg-blue-50';
                 else if (event?.type === 'malattia') bgColor = 'bg-red-50';
                 else if (event?.type === 'sabato') bgColor = 'bg-green-50';
+                else if (event?.type === 'chiusura') bgColor = 'bg-gray-100';
                 else if (event?.forcedShift) bgColor = 'bg-purple-50';
               }
+
+              const handleNoteIconClick = (e: React.MouseEvent, note: string) => {
+                e.stopPropagation();
+                setViewingNote(note);
+              };
 
               return (
                 <motion.div
@@ -282,7 +314,16 @@ export default function App() {
                         {event.type === 'ferie' && <Plane size={14} className="text-blue-500" />}
                         {event.type === 'malattia' && <Stethoscope size={14} className="text-red-500" />}
                         {event.type === 'sabato' && <Check size={14} className="text-green-500" />}
+                        {event.type === 'chiusura' && <Building2 size={14} className="text-gray-500" />}
                         {event.forcedShift && <Info size={14} className="text-purple-500" />}
+                        {event.note && (
+                          <button 
+                            onClick={(e) => handleNoteIconClick(e, event.note!)}
+                            className="hover:scale-110 transition-transform"
+                          >
+                            <Pencil size={14} className="text-amber-600" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -301,15 +342,16 @@ export default function App() {
                       mt-2 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tighter
                       ${event.type === 'ferie' ? 'bg-blue-100 text-blue-700' : 
                         event.type === 'malattia' ? 'bg-red-100 text-red-700' : 
-                        'bg-green-100 text-green-700'}
+                        event.type === 'sabato' ? 'bg-green-100 text-green-700' :
+                        'bg-gray-200 text-gray-700'}
                     `}>
-                      {event.type}
+                      {event.type === 'chiusura' ? 'Chiusura' : event.type}
                     </div>
                   )}
 
                   {event?.forcedShift && !event.type && (
                     <div className="mt-2 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tighter bg-purple-100 text-purple-700">
-                      {event.forcedShift === 'Mattina' ? 'AM' : 'PM'} (Mod.)
+                      {event.forcedShift === 'Mattina' ? 'AM' : 'PM'}
                     </div>
                   )}
 
@@ -349,6 +391,14 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Check size={14} className="text-green-500" />
             <span>Sabato Lavorativo</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Building2 size={14} className="text-gray-500" />
+            <span>Chiusura Aziendale</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Pencil size={14} className="text-amber-600" />
+            <span>Note</span>
           </div>
         </footer>
       </div>
@@ -415,11 +465,38 @@ export default function App() {
                   )}
 
                   <button 
+                    onClick={() => setDayEvent('chiusura')}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-100 transition-colors text-gray-700 font-semibold"
+                  >
+                    <Building2 size={20} />
+                    <span>Chiusura Aziendale</span>
+                  </button>
+
+                  <div className="pt-2">
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Note</label>
+                    <div className="relative">
+                      <textarea
+                        value={noteText}
+                        onChange={(e) => setNoteText(e.target.value)}
+                        placeholder="Aggiungi una nota..."
+                        className="w-full p-4 rounded-2xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-orange-100 focus:border-orange-200 transition-all text-sm resize-none h-24"
+                      />
+                      <button 
+                        onClick={saveNote}
+                        className="absolute bottom-3 right-3 p-2 bg-orange-500 text-white rounded-xl shadow-lg shadow-orange-200 hover:bg-orange-600 transition-colors"
+                      >
+                        <Check size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <button 
                     onClick={() => {
                       const dateKey = format(selectedDate, 'yyyy-MM-dd');
                       const newEvents = { ...events };
                       delete newEvents[dateKey];
                       setEvents(newEvents);
+                      setNoteText('');
                       setIsModalOpen(false);
                     }}
                     className="w-full flex items-center gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-gray-100 transition-colors text-gray-600 font-semibold"
@@ -428,6 +505,44 @@ export default function App() {
                     <span>Rimuovi tutto</span>
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Note Viewing Modal */}
+      <AnimatePresence>
+        {viewingNote && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-100"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <Pencil size={20} />
+                    <h3 className="text-lg font-bold">Nota</h3>
+                  </div>
+                  <button 
+                    onClick={() => setViewingNote(null)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 text-gray-700 text-sm whitespace-pre-wrap leading-relaxed">
+                  {viewingNote}
+                </div>
+                <button 
+                  onClick={() => setViewingNote(null)}
+                  className="w-full mt-4 p-4 bg-gray-900 text-white rounded-2xl font-semibold hover:bg-gray-800 transition-colors"
+                >
+                  Chiudi
+                </button>
               </div>
             </motion.div>
           </div>
