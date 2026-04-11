@@ -1,0 +1,37 @@
+{
+  "entities": {
+    "UserEvent": {
+      "title": "UserEvent",
+      "description": "A shift event or note for a specific day",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ferie", "malattia", "sabato", "chiusura", null],
+          "description": "The type of event"
+        },
+        "forcedShift": {
+          "type": "string",
+          "enum": ["Mattina", "Pomeriggio", null],
+          "description": "Manual shift override"
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note for the day"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/events/{dateKey}": {
+      "schema": "UserEvent",
+      "description": "Stores shift events and notes for a specific user and date"
+    }
+  }
+}

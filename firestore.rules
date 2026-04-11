@@ -1,0 +1,57 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: /users/{userId}/events/{dateKey}
+// Document ID: dateKey (YYYY-MM-DD)
+// Fields:
+//   - type: string (optional, enum: ['ferie', 'malattia', 'sabato', 'chiusura'])
+//   - forcedShift: string (optional, enum: ['Mattina', 'Pomeriggio'])
+//   - note: string (optional, max 1000 chars)
+//   - updatedAt: timestamp (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['updatedAt']) &&
+             (!('type' in data) || data.type in ['ferie', 'malattia', 'sabato', 'chiusura', null]) &&
+             (!('forcedShift' in data) || data.forcedShift in ['Mattina', 'Pomeriggio', null]) &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 1000));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      
+      match /events/{dateKey} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidEvent(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

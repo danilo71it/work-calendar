@@ -35,9 +35,28 @@ import {
   Plus,
   Building2,
   Pencil,
-  MessageSquare
+  MessageSquare,
+  LogIn,
+  LogOut,
+  User as UserIcon,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  serverTimestamp,
+  User
+} from './firebase';
 
 // Reference: 2026-04-06 is Monday of a Morning week
 const REFERENCE_DATE = new Date(2026, 3, 6); // April 6, 2026
@@ -56,25 +75,69 @@ export default function App() {
   const [events, setEvents] = useState<Record<string, DayEvent>>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
-  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [viewingNote, setViewingNote] = useState<string | null>(null);
+  
+  // Auth state
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-  // Load events from localStorage
+  // Listen for auth changes
   useEffect(() => {
-    const savedEvents = localStorage.getItem('shift_calendar_events');
-    if (savedEvents) {
-      try {
-        setEvents(JSON.parse(savedEvents));
-      } catch (e) {
-        console.error('Failed to parse events', e);
-      }
-    }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  // Save events to localStorage
+  // Sync with Firestore when user is logged in
   useEffect(() => {
-    localStorage.setItem('shift_calendar_events', JSON.stringify(events));
-  }, [events]);
+    if (!user) {
+      // If not logged in, we could fallback to localStorage or just clear
+      const savedEvents = localStorage.getItem('shift_calendar_events');
+      if (savedEvents) {
+        try {
+          setEvents(JSON.parse(savedEvents));
+        } catch (e) {
+          console.error('Failed to parse events', e);
+        }
+      } else {
+        setEvents({});
+      }
+      return;
+    }
+
+    const eventsRef = collection(db, 'users', user.uid, 'events');
+    const unsubscribe = onSnapshot(eventsRef, (snapshot) => {
+      const newEvents: Record<string, DayEvent> = {};
+      snapshot.forEach((doc) => {
+        newEvents[doc.id] = doc.data() as DayEvent;
+      });
+      setEvents(newEvents);
+      // Also update localStorage as a cache
+      localStorage.setItem('shift_calendar_events', JSON.stringify(newEvents));
+    }, (error) => {
+      console.error("Firestore sync error:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login error:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
@@ -112,20 +175,53 @@ export default function App() {
     setIsModalOpen(true);
   };
 
+  const updateFirestore = async (date: Date, eventData: DayEvent | null) => {
+    if (!user) {
+      // Fallback to localStorage if not logged in
+      const dateKey = format(date, 'yyyy-MM-dd');
+      const newEvents = { ...events };
+      if (eventData === null) {
+        delete newEvents[dateKey];
+      } else {
+        newEvents[dateKey] = eventData;
+      }
+      setEvents(newEvents);
+      localStorage.setItem('shift_calendar_events', JSON.stringify(newEvents));
+      return;
+    }
+
+    const dateKey = format(date, 'yyyy-MM-dd');
+    const docRef = doc(db, 'users', user.uid, 'events', dateKey);
+
+    try {
+      if (eventData === null) {
+        await deleteDoc(docRef);
+      } else {
+        await setDoc(docRef, {
+          ...eventData,
+          updatedAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      console.error("Error updating Firestore:", error);
+    }
+  };
+
   const saveNote = () => {
     if (!selectedDate) return;
     const dateKey = format(selectedDate, 'yyyy-MM-dd');
     const currentEvent = events[dateKey] || { type: null };
     
-    if (!noteText.trim() && !currentEvent.type && !currentEvent.forcedShift) {
-      const newEvents = { ...events };
-      delete newEvents[dateKey];
-      setEvents(newEvents);
+    const updatedEvent = { 
+      ...currentEvent, 
+      note: noteText.trim() || undefined 
+    };
+
+    // If everything is empty, we should delete
+    if (!updatedEvent.note && !updatedEvent.type && !updatedEvent.forcedShift) {
+      updateFirestore(selectedDate, null);
     } else {
-      setEvents({
-        ...events,
-        [dateKey]: { ...currentEvent, note: noteText.trim() || undefined }
-      });
+      updateFirestore(selectedDate, updatedEvent);
     }
     setIsModalOpen(false);
   };
@@ -136,21 +232,13 @@ export default function App() {
     const currentEvent = events[dateKey] || {};
     
     if (type === null) {
-      if (currentEvent.forcedShift) {
-        setEvents({
-          ...events,
-          [dateKey]: { ...currentEvent, type: null }
-        });
+      if (currentEvent.forcedShift || currentEvent.note) {
+        updateFirestore(selectedDate, { ...currentEvent, type: null });
       } else {
-        const newEvents = { ...events };
-        delete newEvents[dateKey];
-        setEvents(newEvents);
+        updateFirestore(selectedDate, null);
       }
     } else {
-      setEvents({
-        ...events,
-        [dateKey]: { ...currentEvent, type }
-      });
+      updateFirestore(selectedDate, { ...currentEvent, type });
     }
     setIsModalOpen(false);
   };
@@ -162,21 +250,15 @@ export default function App() {
     const currentShift = getShift(selectedDate);
     const nextShift = currentShift === 'Mattina' ? 'Pomeriggio' : 'Mattina';
     
-    // If nextShift is the default shift, we remove the override
     if (nextShift === getDefaultShift(selectedDate)) {
       const { forcedShift, ...rest } = currentEvent;
-      if (Object.keys(rest).length === 0) {
-        const newEvents = { ...events };
-        delete newEvents[dateKey];
-        setEvents(newEvents);
+      if (Object.keys(rest).length === 0 || (Object.keys(rest).length === 1 && rest.type === null)) {
+        updateFirestore(selectedDate, null);
       } else {
-        setEvents({ ...events, [dateKey]: rest as DayEvent });
+        updateFirestore(selectedDate, rest as DayEvent);
       }
     } else {
-      setEvents({
-        ...events,
-        [dateKey]: { ...currentEvent, forcedShift: nextShift }
-      });
+      updateFirestore(selectedDate, { ...currentEvent, forcedShift: nextShift });
     }
     setIsModalOpen(false);
   };
@@ -186,9 +268,48 @@ export default function App() {
     return events[dateKey];
   };
 
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
+        <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans selection:bg-orange-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
+        {/* User Bar */}
+        <div className="flex justify-end mb-4">
+          {user ? (
+            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl shadow-sm border border-gray-100">
+              <div className="flex items-center gap-2">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt={user.displayName || ''} className="w-6 h-6 rounded-full" referrerPolicy="no-referrer" />
+                ) : (
+                  <UserIcon size={16} className="text-gray-400" />
+                )}
+                <span className="text-xs font-semibold text-gray-600 hidden sm:inline">{user.displayName}</span>
+              </div>
+              <button 
+                onClick={handleLogout}
+                className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <LogOut size={14} />
+                <span>Esci</span>
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={handleLogin}
+              className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl shadow-sm border border-gray-100 text-xs font-bold text-orange-600 hover:bg-orange-50 transition-colors"
+            >
+              <LogIn size={14} />
+              <span>Accedi per Sincronizzare</span>
+            </button>
+          )}
+        </div>
+
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
           <div>
@@ -492,10 +613,7 @@ export default function App() {
 
                   <button 
                     onClick={() => {
-                      const dateKey = format(selectedDate, 'yyyy-MM-dd');
-                      const newEvents = { ...events };
-                      delete newEvents[dateKey];
-                      setEvents(newEvents);
+                      updateFirestore(selectedDate!, null);
                       setNoteText('');
                       setIsModalOpen(false);
                     }}
